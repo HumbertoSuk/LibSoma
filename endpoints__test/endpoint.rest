@@ -1,0 +1,73 @@
+### crear un usuario
+POST http://localhost:8000/register/ HTTP/1.1
+Content-Type: application/json
+
+{
+  "username": "july",
+  "password": "july",
+  "email": "test@a.com",
+  "role_id": 1
+}
+
+###generar token
+POST http://localhost:8000/token/
+Content-Type: application/x-www-form-urlencoded
+
+'grant_type=password&username=july&password=july&scope=&client_id=string&client_secret=string'
+
+### Mostrar lista de usuarios
+GET http://localhost:8000/users/
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJqdWx5IiwiZXhwIjoxNzI2NzQxODYzfQ.VWytfqqnMdRGuqhiVDirOJ7vv1tGwDYXMqJoEiaDefk
+
+### Eliminar usuarios
+DELETE http://localhost:8000/users/6/
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJqdWx5IiwiZXhwIjoxNzI2NzQxODYzfQ.VWytfqqnMdRGuqhiVDirOJ7vv1tGwDYXMqJoEiaDefk
+
+### Editar usuario
+PUT http://localhost:8000/users/11/
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJqdWx5IiwiZXhwIjoxNzI2NDgwMDUwfQ.TQD42t2JD94J0O4X7yGX92XpIx5BtWjY5PxG_P9Z3P4
+
+{
+  "username": "nasdew_useraasdsdname",
+  "password": "new_password",
+  "email": "new_email@asdeasdxaasdample.com",
+  "role_id": 1
+}
+
+
+### Editar usuario
+GET http://localhost:8000/users/
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJqdWx5IiwiZXhwIjoxNzI2NDgwMDUwfQ.TQD42t2JD94J0O4X7yGX92XpIx5BtWjY5PxG_P9Z3P4
+
+###Roles
+POST http://localhost:8000/roles/
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJqdWx5IiwiZXhwIjoxNzI2NDgxMTY3fQ.cv5tkK0HQpF4R9hkO7-zwI4khWgxzJVso4rHNEUVx8E
+
+{
+  "name": "Admin"
+}
+
+### Buscar rol
+GET http://localhost:8000/loan-history/
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJqdWx5IiwiZXhwIjoxNzI2NDgxMTY3fQ.cv5tkK0HQpF4R9hkO7-zwI4khWgxzJVso4rHNEUVx8E
+
+### Lista de roles
+PUT http://localhost:8000/roles/1/
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJqdWx5IiwiZXhwIjoxNzI2NDgxMTY3fQ.cv5tkK0HQpF4R9hkO7-zwI4khWgxzJVso4rHNEUVx8E
+
+{
+  "name": "SuperAdmin1"
+}
+
+### eliminar un rol
+DELETE http://localhost:8000/roles/3/
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJqdWx5IiwiZXhwIjoxNzI2NDgxMTY3fQ.cv5tkK0HQpF4R9hkO7-zwI4khWgxzJVso4rHNEUVx8E
+
+### Buscar rol
+GET http://localhost:8000/roles/
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJqdWx5IiwiZXhwIjoxNzI2NDgxMTY3fQ.cv5tkK0HQpF4R9hkO7-zwI4khWgxzJVso4rHNEUVx8E
+

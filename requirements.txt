@@ -1,0 +1,10 @@
+fastapi  # Framework para la API
+uvicorn # Servidor ASGI para ejecutar la API
+psycopg2-binary # Driver para PostgreSQL
+databases # Capa de abstracción asíncrona para consultas SQL sin ORM
+asyncpg # Driver asíncrono para PostgreSQL
+bcrypt  # Para hashear las contraseñas
+python-jose[cryptography] # Para manejar JWT
+python-multipart  # Para procesar formularios en las solicitudes de autenticación
+passlib # Librería para manejo de contraseñas
+python-dotenv
