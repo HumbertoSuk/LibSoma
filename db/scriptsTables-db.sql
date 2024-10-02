@@ -119,3 +119,9 @@ CREATE TABLE fines (
 -- Índices para optimizar las consultas por usuario y estado de pago
 CREATE INDEX idx_fines_user_id ON fines(user_id);
 CREATE INDEX idx_fines_paid ON fines(paid);
+
+CREATE TABLE invalidated_tokens (
+    id SERIAL PRIMARY KEY,
+    token TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

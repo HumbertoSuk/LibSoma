@@ -1,5 +1,5 @@
 """Rutas de los usuarios"""
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Body
 from app.schemas.user import UserCreate, UserResponse
 from app.utils.auth import get_password_hash, verify_token
 from app.utils.database import get_db_connection
@@ -237,6 +237,7 @@ async def list_users(
     page: int = Query(1, ge=1),
     per_page: int = Query(10, ge=1, le=100),
     username: str = None,
+    user_id: int = None,  # Nuevo parámetro para filtrar por ID
     token: str = Depends(oauth2_scheme)
 ):
     """
@@ -246,6 +247,7 @@ async def list_users(
         page (int): Número de página.
         per_page (int): Cantidad de resultados por página (máximo 100).
         username (str, opcional): Filtro por nombre de usuario.
+        user_id (int, opcional): Filtro por ID de usuario.
 
     Returns:
         list[UserResponse]: Una lista de usuarios con sus detalles, incluyendo el ID.
@@ -266,13 +268,17 @@ async def list_users(
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Filtro opcional por username
+    # Filtro opcional por username o user_id
     query = "SELECT id, username, email, role_id FROM users WHERE TRUE"
     params = []
 
     if username:
         query += " AND username ILIKE %s"
         params.append(f"%{username}%")
+
+    if user_id:
+        query += " AND id = %s"
+        params.append(user_id)
 
     # Paginación
     offset = (page - 1) * per_page
@@ -283,3 +289,88 @@ async def list_users(
     users = cursor.fetchall()
 
     return [{"id": user["id"], "username": user["username"], "email": user["email"], "role_id": user["role_id"]} for user in users]
+
+
+@router.get("/users/{user_id}/", response_model=UserResponse)
+async def get_user_by_id(
+    user_id: int,
+    token: str = Depends(oauth2_scheme)
+):
+    """
+    Obtiene los detalles de un usuario específico por ID.
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    verify_token(token, credentials_exception)
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT id, username, email, role_id FROM users WHERE id = %s", (user_id,))
+    user = cursor.fetchone()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return {"id": user["id"], "username": user["username"], "email": user["email"], "role_id": user["role_id"]}
+
+
+@router.put("/users/{user_id}/update-password/")
+async def update_password(
+    user_id: int,
+    # Recibe `new_password` directamente del cuerpo de la solicitud
+    new_password: str = Body(..., embed=True),
+    token: str = Depends(oauth2_scheme)
+):
+    """
+    Permite a un administrador o usuario cambiar la contraseña de un usuario específico usando el ID.
+
+    Args:
+        user_id (int): El ID del usuario cuyo password se va a cambiar.
+        new_password (str): La nueva contraseña deseada.
+        token (str): El token JWT del usuario autenticado.
+
+    Returns:
+        dict: Un mensaje de éxito si la contraseña fue cambiada correctamente.
+
+    Raises:
+        HTTPException: Si ocurre un error durante el cambio de contraseña.
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"}
+    )
+
+    # Verificar el token JWT
+    verify_token(token, credentials_exception)
+
+    # Obtener la conexión a la base de datos
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Verificar si el usuario cuyo ID fue pasado existe
+    cursor.execute("SELECT id FROM users WHERE id = %s", (user_id,))
+    user = cursor.fetchone()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    # Hashear la nueva contraseña
+    hashed_new_password = get_password_hash(new_password)
+
+    # Actualizar la contraseña en la base de datos para el usuario con el ID proporcionado
+    cursor.execute(
+        "UPDATE users SET password = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+        (hashed_new_password, user["id"])
+    )
+    conn.commit()
+
+    return {"message": "Password updated successfully"}

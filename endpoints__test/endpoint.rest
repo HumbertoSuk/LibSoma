@@ -16,8 +16,8 @@ Content-Type: application/x-www-form-urlencoded
 'grant_type=password&username=july&password=july&scope=&client_id=string&client_secret=string'
 
 ### Mostrar lista de usuarios
-GET http://localhost:8000/users/
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJqdWx5IiwiZXhwIjoxNzI2NzQxODYzfQ.VWytfqqnMdRGuqhiVDirOJ7vv1tGwDYXMqJoEiaDefk
+GET http://localhost:8000/user/12
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJqdWx5IiwiZXhwIjoxNzI3NjkzNTAxfQ.e2HPzhLIXAeuYiRLz4YyOOTY__vCeuaViJrikpRA-Jw
 
 ### Eliminar usuarios
 DELETE http://localhost:8000/users/6/
@@ -71,3 +71,14 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJqdWx5IiwiZ
 GET http://localhost:8000/roles/
 Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJqdWx5IiwiZXhwIjoxNzI2NDgxMTY3fQ.cv5tkK0HQpF4R9hkO7-zwI4khWgxzJVso4rHNEUVx8E
 
+
+
+#### Update de libros
+PUT http://localhost:8000/books/3
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJqdWx5IiwiZXhwIjoxNzI2NzQxODYzfQ.VWytfqqnMdRGuqhiVDirOJ7vv1tGwDYXMqJoEiaDefk
+
+{
+  "author": "beh"
+
+}
