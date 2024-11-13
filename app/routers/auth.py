@@ -22,8 +22,8 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     cursor = conn.cursor()
 
     try:
-        # Buscar el usuario en la base de datos
-        query = "SELECT * FROM users WHERE username = %s"
+        # Buscar el usuario en la base de datos, incluyendo el id de rol
+        query = "SELECT id, username, password, role_id FROM users WHERE username = %s"
         cursor.execute(query, (form_data.username,))
         user = cursor.fetchone()
 
@@ -37,7 +37,13 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
             data={"sub": user["username"]}, expires_delta=access_token_expires
         )
 
-        return {"access_token": access_token, "token_type": "bearer"}
+        # Incluir el user_id y role_id en la respuesta
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user_id": user["id"],      # ID del usuario
+            "role_id": user["role_id"]  # ID del rol del usuario
+        }
 
     finally:
         cursor.close()

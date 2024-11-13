@@ -11,42 +11,82 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
 @router.post("/book-reservations/", response_model=BookReservationResponse)
-async def create_book_reservation(reservation: BookReservationCreate, token: str = Depends(oauth2_scheme)):
+async def create_book_reservation(
+    reservation: BookReservationCreate,
+    token: str = Depends(oauth2_scheme)
+):
     """
-    Crea una nueva reserva de libro.
+    Creates a new book reservation if the user does not already have an active reservation 
+    for the same book and updates the available copies count.
 
     Args:
-        reservation (BookReservationCreate): Datos de la reserva a crear.
-        token (str): El token JWT del usuario autenticado.
+        reservation (BookReservationCreate): Reservation data.
+        token (str): JWT token of the authenticated user.
 
     Returns:
-        dict: Un objeto JSON con los detalles de la reserva creada.
+        dict: JSON object with details of the created reservation.
 
     Raises:
-        HTTPException: Si la reserva no puede ser creada.
+        HTTPException: If the user already has an active reservation for the book 
+                       or if no copies are available.
     """
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Crear la nueva reserva de libro
-    query = """
-        INSERT INTO book_reservations (user_id, book_id, reservation_date, active)
-        VALUES (%s, %s, CURRENT_TIMESTAMP, TRUE)
-        RETURNING id, user_id, book_id, reservation_date, active
-    """
-    cursor.execute(query, (reservation.user_id, reservation.book_id))
-    conn.commit()
+    try:
+        # Check if the user already has an active reservation for this book
+        cursor.execute("""
+            SELECT * FROM book_reservations
+            WHERE user_id = %s AND book_id = %s AND active = TRUE
+        """, (reservation.user_id, reservation.book_id))
+        existing_reservation = cursor.fetchone()
 
-    new_reservation = cursor.fetchone()
+        if existing_reservation:
+            raise HTTPException(
+                status_code=400,
+                detail="You already have an active reservation for this book."
+            )
 
-    return {
-        "id": new_reservation["id"],
-        "user_id": new_reservation["user_id"],
-        "book_id": new_reservation["book_id"],
-        "reservation_date": new_reservation["reservation_date"],
-        "active": new_reservation["active"],
-        "message": "Book reservation created successfully"
-    }
+        # Check if there are available copies of the book
+        cursor.execute("""
+            SELECT copies_available FROM books WHERE id = %s
+        """, (reservation.book_id,))
+        book = cursor.fetchone()
+
+        if not book or book["copies_available"] <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="No available copies of this book."
+            )
+
+        # Create the new book reservation and decrement available copies
+        cursor.execute("""
+            INSERT INTO book_reservations (user_id, book_id, reservation_date, active)
+            VALUES (%s, %s, CURRENT_TIMESTAMP, TRUE)
+            RETURNING id, user_id, book_id, reservation_date, active
+        """, (reservation.user_id, reservation.book_id))
+        new_reservation = cursor.fetchone()
+
+        cursor.execute("""
+            UPDATE books SET copies_available = copies_available - 1
+            WHERE id = %s
+        """, (reservation.book_id,))
+        conn.commit()
+
+        return {
+            "id": new_reservation["id"],
+            "user_id": new_reservation["user_id"],
+            "book_id": new_reservation["book_id"],
+            "reservation_date": new_reservation["reservation_date"],
+            "active": new_reservation["active"],
+            "message": "Book reservation created successfully and copy count updated."
+        }
+    except Exception as e:
+        conn.rollback()  # Roll back changes in case of an error
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
 
 
 @router.get("/book-reservations/{reservation_id}/", response_model=BookReservationResponse)
@@ -223,3 +263,67 @@ async def get_user_reservations(user_id: int, token: str = Depends(oauth2_scheme
     reservations = cursor.fetchall()
 
     return [{"id": reservation["id"], "book_id": reservation["book_id"], "reservation_date": reservation["reservation_date"], "active": reservation["active"]} for reservation in reservations]
+
+
+@router.put("/book-reservations/{reservation_id}/fulfill", response_model=BookReservationResponse)
+async def fulfill_book_reservation(reservation_id: int, token: str = Depends(oauth2_scheme)):
+    """
+    Marca una reserva de libro como cumplida (inactiva) y aumenta en uno la cantidad de copias disponibles del libro.
+
+    Args:
+        reservation_id (int): El ID de la reserva a cumplir.
+        token (str): El token JWT del usuario autenticado.
+
+    Returns:
+        dict: Un objeto JSON con los detalles de la reserva cumplida.
+
+    Raises:
+        HTTPException: Si la reserva no existe o ya está cumplida.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Verificar si la reserva existe y está activa
+        cursor.execute("""
+            SELECT * FROM book_reservations 
+            WHERE id = %s AND active = TRUE
+        """, (reservation_id,))
+        reservation = cursor.fetchone()
+
+        if not reservation:
+            raise HTTPException(
+                status_code=404, detail="Reservation not found or already fulfilled")
+
+        # Marcar la reserva como cumplida
+        cursor.execute("""
+            UPDATE book_reservations 
+            SET active = FALSE 
+            WHERE id = %s 
+            RETURNING id, user_id, book_id, reservation_date, active
+        """, (reservation_id,))
+        fulfilled_reservation = cursor.fetchone()
+
+        # Aumentar en uno las copias disponibles del libro
+        cursor.execute("""
+            UPDATE books 
+            SET copies_available = copies_available + 1 
+            WHERE id = %s
+        """, (fulfilled_reservation["book_id"],))
+
+        conn.commit()
+
+        return {
+            "id": fulfilled_reservation["id"],
+            "user_id": fulfilled_reservation["user_id"],
+            "book_id": fulfilled_reservation["book_id"],
+            "reservation_date": fulfilled_reservation["reservation_date"],
+            "active": fulfilled_reservation["active"],
+            "message": "Book reservation fulfilled and copy count updated"
+        }
+    except Exception as e:
+        conn.rollback()  # Revertir cambios en caso de error
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()

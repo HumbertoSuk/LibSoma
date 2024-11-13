@@ -1,3 +1,4 @@
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from app.schemas.fines import FineCreate, FineResponse
 from app.utils.database import get_db_connection
@@ -141,26 +142,61 @@ async def pay_fine(fine_id: int, token: str = Depends(oauth2_scheme)):
         "message": "Fine paid successfully"
     }
 
+# Parámetros de la multa
+INITIAL_FINE = 100  # Multa inicial después del período de gracia
+DAILY_FINE = 10  # Multa diaria adicional por cada día después del período de gracia
+GRACE_PERIOD_DAYS = 7  # Días de gracia sin multa
+
 
 @router.get("/fines/", response_model=List[FineResponse])
 async def list_fines(page: int = Query(1, ge=1), per_page: int = Query(10, ge=1, le=100), token: str = Depends(oauth2_scheme)):
     """
-    Obtiene una lista de todas las multas con paginación.
-
-    Args:
-        page (int): Número de página (por defecto 1).
-        per_page (int): Número de multas por página (por defecto 10, máximo 100).
-        token (str): El token JWT del usuario autenticado.
-
-    Returns:
-        list: Una lista paginada de todas las multas.
+    Obtiene una lista de todas las multas con paginación y genera o recalcula automáticamente multas para préstamos vencidos.
     """
     conn = get_db_connection()
     cursor = conn.cursor()
-
     offset = (page - 1) * per_page
+    current_date = datetime.utcnow()
 
-    # Obtener todas las multas con paginación
+    # Step 1: Find overdue loans that have not been returned
+    cursor.execute("SELECT * FROM loans WHERE returned = FALSE")
+    overdue_loans = cursor.fetchall()
+
+    for loan in overdue_loans:
+        loan_id = loan["id"]
+        user_id = loan["user_id"]
+        loan_date = loan["loan_date"]
+
+        # Calculate total overdue days after the grace period
+        overdue_days = (current_date - loan_date).days - GRACE_PERIOD_DAYS
+        if overdue_days > 0:
+            # Check if there's an existing unpaid fine for this loan
+            cursor.execute(
+                "SELECT * FROM fines WHERE loan_id = %s AND paid = FALSE ORDER BY fine_date DESC LIMIT 1",
+                (loan_id,)
+            )
+            existing_fine = cursor.fetchone()
+
+            total_fine_amount = INITIAL_FINE + (overdue_days * DAILY_FINE)
+            description = f"Multa por exceso de días ({overdue_days} días excedidos)"
+
+            if existing_fine:
+                # Fine already exists, update it with the recalculated fine amount
+                cursor.execute("""
+                    UPDATE fines
+                    SET amount = %s, description = %s, fine_date = %s
+                    WHERE id = %s
+                """, (total_fine_amount, description, current_date, existing_fine["id"]))
+            else:
+                # No previous fine, create an initial fine for the overdue period
+                cursor.execute("""
+                    INSERT INTO fines (user_id, loan_id, amount, description, paid, fine_date)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (user_id, loan_id, total_fine_amount, description, False, current_date))
+
+    conn.commit()
+
+    # Step 2: Retrieve all fines with pagination
     cursor.execute("SELECT * FROM fines LIMIT %s OFFSET %s",
                    (per_page, offset))
     fines = cursor.fetchall()

@@ -82,3 +82,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJqdWx5IiwiZ
   "author": "beh"
 
 }
+
+#### Update de libros
+GET  http://localhost:8000/users/
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJqdWx5IiwiZXhwIjoxNzI2NzQxODYzfQ.VWytfqqnMdRGuqhiVDirOJ7vv1tGwDYXMqJoEiaDefk

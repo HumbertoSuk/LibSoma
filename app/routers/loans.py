@@ -15,57 +15,75 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 @router.post("/loans/", response_model=LoanResponse)
 async def create_loan(loan: LoanCreate, token: str = Depends(oauth2_scheme)):
     """
-    Crea un nuevo préstamo en la base de datos.
+    Creates a new loan if copies are available and the user doesn't already have an active loan for the book.
+    Updates the stock count of available copies for the book.
 
     Args:
-        loan (LoanCreate): Datos del préstamo (usuario y libro).
-        token (str): El token JWT del usuario autenticado.
+        loan (LoanCreate): Loan data (user and book).
+        token (str): The JWT token of the authenticated user.
 
     Returns:
-        dict: Un objeto JSON con los detalles del préstamo creado.
+        dict: A JSON object with details of the created loan.
 
     Raises:
-        HTTPException: Si ya existe un préstamo activo para el libro.
+        HTTPException: If the user already has an active loan for the book or if no copies are available.
     """
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Verificar si ya existe un préstamo activo para el libro
-    cursor.execute(
-        "SELECT * FROM loans WHERE book_id = %s AND returned = FALSE", (loan.book_id,))
-    existing_loan = cursor.fetchone()
+    try:
+        # Check if there are copies available
+        cursor.execute(
+            "SELECT copies_available FROM books WHERE id = %s", (loan.book_id,))
+        book = cursor.fetchone()
 
-    if existing_loan:
-        raise HTTPException(
-            status_code=400, detail="This book is already on loan."
-        )
+        if not book or book["copies_available"] <= 0:
+            raise HTTPException(
+                status_code=400, detail="No copies available for this book.")
 
-    # Crear el nuevo préstamo
-    query = """
-        INSERT INTO loans (user_id, book_id)
-        VALUES (%s, %s)
-        RETURNING id, user_id, book_id, loan_date, return_date, returned
-    """
-    cursor.execute(query, (loan.user_id, loan.book_id))
-    conn.commit()
+        # Check if the user already has an active loan for this book
+        cursor.execute(
+            "SELECT * FROM loans WHERE book_id = %s AND user_id = %s AND returned = FALSE",
+            (loan.book_id, loan.user_id))
+        user_existing_loan = cursor.fetchone()
 
-    new_loan = cursor.fetchone()
+        if user_existing_loan:
+            raise HTTPException(
+                status_code=400, detail="You already have an active loan for this book.")
 
-    return {
-        "id": new_loan["id"],
-        "user_id": new_loan["user_id"],
-        "book_id": new_loan["book_id"],
-        "loan_date": new_loan["loan_date"],
-        "return_date": new_loan["return_date"],
-        "returned": new_loan["returned"],
-        "message": "Loan created successfully"
-    }
+        # Create the new loan and update the number of available copies
+        cursor.execute("""
+            INSERT INTO loans (user_id, book_id)
+            VALUES (%s, %s)
+            RETURNING id, user_id, book_id, loan_date, return_date, returned
+        """, (loan.user_id, loan.book_id))
+        new_loan = cursor.fetchone()
+
+        cursor.execute(
+            "UPDATE books SET copies_available = copies_available - 1 WHERE id = %s", (loan.book_id,))
+        conn.commit()
+
+        return {
+            "id": new_loan["id"],
+            "user_id": new_loan["user_id"],
+            "book_id": new_loan["book_id"],
+            "loan_date": new_loan["loan_date"],
+            "return_date": new_loan["return_date"],
+            "returned": new_loan["returned"],
+            "message": "Loan created successfully, and the number of available copies updated."
+        }
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
 
 
 @router.put("/loans/{loan_id}/return", response_model=LoanResponse)
 async def return_book(loan_id: int, token: str = Depends(oauth2_scheme)):
     """
-    Marca un préstamo como devuelto y actualiza la base de datos.
+    Marca un préstamo como devuelto, actualiza la fecha de devolución y suma una copia disponible.
 
     Args:
         loan_id (int): El ID del préstamo a marcar como devuelto.
@@ -80,38 +98,47 @@ async def return_book(loan_id: int, token: str = Depends(oauth2_scheme)):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Verificar si el préstamo existe
-    cursor.execute("SELECT * FROM loans WHERE id = %s", (loan_id,))
-    loan = cursor.fetchone()
+    try:
+        # Verificar si el préstamo existe
+        cursor.execute("SELECT * FROM loans WHERE id = %s", (loan_id,))
+        loan = cursor.fetchone()
 
-    if not loan:
-        raise HTTPException(status_code=404, detail="Loan not found")
+        if not loan:
+            raise HTTPException(
+                status_code=404, detail="Préstamo no encontrado")
 
-    if loan["returned"]:
-        raise HTTPException(
-            status_code=400, detail="This loan has already been returned")
+        if loan["returned"]:
+            raise HTTPException(
+                status_code=400, detail="Este préstamo ya ha sido devuelto.")
 
-    # Marcar el préstamo como devuelto y actualizar la fecha de devolución
-    query = """
-        UPDATE loans
-        SET returned = TRUE, return_date = %s
-        WHERE id = %s
-        RETURNING id, user_id, book_id, loan_date, return_date, returned
-    """
-    cursor.execute(query, (datetime.utcnow(), loan_id))
-    conn.commit()
+        # Marcar el préstamo como devuelto, actualizar la fecha de devolución y aumentar copias
+        cursor.execute("""
+            UPDATE loans
+            SET returned = TRUE, return_date = %s
+            WHERE id = %s
+            RETURNING id, user_id, book_id, loan_date, return_date, returned
+        """, (datetime.utcnow(), loan_id))
+        updated_loan = cursor.fetchone()
 
-    updated_loan = cursor.fetchone()
+        cursor.execute(
+            "UPDATE books SET copies_available = copies_available + 1 WHERE id = %s", (loan["book_id"],))
+        conn.commit()
 
-    return {
-        "id": updated_loan["id"],
-        "user_id": updated_loan["user_id"],
-        "book_id": updated_loan["book_id"],
-        "loan_date": updated_loan["loan_date"],
-        "return_date": updated_loan["return_date"],
-        "returned": updated_loan["returned"],
-        "message": "Book returned successfully"
-    }
+        return {
+            "id": updated_loan["id"],
+            "user_id": updated_loan["user_id"],
+            "book_id": updated_loan["book_id"],
+            "loan_date": updated_loan["loan_date"],
+            "return_date": updated_loan["return_date"],
+            "returned": updated_loan["returned"],
+            "message": "Libro devuelto y copias actualizadas correctamente"
+        }
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
 
 
 @router.get("/loans/", response_model=List[LoanResponse])
